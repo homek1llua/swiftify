@@ -8,12 +8,12 @@ import Swiftify
 Item {
     id: slot
 
-    final property Component page
+    property Component page
     /// an old step is let go, to be built afresh if back ever reaches it
-    final property bool built: true
-    final property ArtworkImage returnCover: null
-    final property url returnSource
-    final property bool returnCircular: false
+    property bool built: true
+    property ArtworkImage returnCover: null
+    property url returnSource
+    property bool returnCircular: false
     readonly property Item view: loader.item as Item
 
     Loader {
