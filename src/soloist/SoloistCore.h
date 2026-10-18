@@ -58,6 +58,7 @@ public:
     QCoro::Task<> playFile(QString path) override;
     QCoro::Task<> restartAudioOutput() override;
     QCoro::Task<QString> lyricsJson(QString spotifyUri) override;
+    QCoro::Task<QString> playlistJson(QString playlistUri) override;
 
     void play() override;
     void pause() override;
@@ -87,6 +88,8 @@ private:
 
     void startDaemon();
     void connectSocket();
+    /// looks for soloist's port until the socket opens or time runs out
+    void watchForSocket(bool restartClock);
     void handleMessage(const QString &text);
     void applyPlaybackState(const QJsonObject &state);
     void applyItem(const QJsonObject &item);
@@ -114,7 +117,9 @@ private:
     PlaybackCore *m_fallback;
     SoloistConfig m_config;
     std::unique_ptr<SwiftifyLiveBuffer, void (*)(SwiftifyLiveBuffer *)> m_liveBuffer;
+#ifdef SWIFTIFY_DESKTOP_INTEGRATION
     std::unique_ptr<SoloistAudioRoute> m_route;
+#endif
     /// soloist plays into m_route's sink
     bool m_routed = false;
     QProcess m_process;

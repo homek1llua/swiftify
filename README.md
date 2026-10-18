@@ -49,7 +49,7 @@ first image shows equalizer, tempo and pitch settings. second picture shows how 
 spotify refuses librespot the keys to decrypt songs on newer accounts (librespot's
 logs say `error audio key 0 1`), so every song fails. on linux swiftify can play
 spotify's songs through [spotify soloist](https://developer.spotify.com/documentation/soloist)
-instead, spotify's own connect client, which isnt affected:
+instead, spotify's own connect client, which isnt affected.
 
 1. install soloist from its [getting started guide](https://developer.spotify.com/documentation/soloist/tutorials/getting-started)
    (`~/.local/bin/soloist` is fine)
@@ -60,11 +60,12 @@ instead, spotify's own connect client, which isnt affected:
    computer, so soloist is signed in
 4. press play in swiftify
 
-what changes with soloist: swiftify makes a sink called "Swiftify (Soloist)" for soloist
-to play into, and plays that on through its own output, so the equalizer and the
-visualizers still work (`SWIFTIFY_SOLOIST_ROUTE=off` plays soloist straight to the speakers
-instead). tempo and pitch only work on your own music files, and crossfade waits for each
-song to end. soloist builds expire after 90 days; download a new one when it says so.
+with soloist, swiftify makes a sink called "Swiftify (Soloist)" for soloist to play into,
+and plays that on through its own output, so the equalizer and the visualizers still work.
+this needs pipewire, under pulseaudio alone soloist plays straight to the speakers.
+`SWIFTIFY_SOLOIST_ROUTE=off` does that on purpose. tempo and pitch only work on your own
+music files, and crossfade waits for each song to end. soloist builds expire after 90 days,
+download a new one when it says so.
 `SWIFTIFY_PLAYBACK=librespot swiftify` goes back to librespot alone.
 
 if spotify on your phone doesnt list "Swiftify" for step 3, a firewall (ufw) is probably

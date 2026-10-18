@@ -102,9 +102,22 @@ SoloistCore::SoloistCore(PlaybackCore *fallback, SoloistConfig config, QObject *
         emit stateChanged();
     });
     connect(&m_socket, &QWebSocket::disconnected, this, [this] {
+        const bool wasOpen = m_socketOpen;
         m_socketOpen = false;
         m_authKnown = false;
+        // soloist still running lost its socket, so it is opened again
+        if (m_process.state() != QProcess::NotRunning && !m_portWatch.isActive()) {
+            watchForSocket(wasOpen);
+        }
         emit stateChanged();
+    });
+    connect(&m_socket, &QWebSocket::errorOccurred, this, [this] {
+        // a socket that would not open is tried again until soloist's start
+        // runs out of time
+        if (!m_socketOpen && m_process.state() != QProcess::NotRunning && !m_portWatch.isActive()
+            && m_socket.state() == QAbstractSocket::UnconnectedState) {
+            watchForSocket(false);
+        }
     });
     connect(&m_socket, &QWebSocket::textMessageReceived, this, &SoloistCore::handleMessage);
 
@@ -115,6 +128,7 @@ SoloistCore::SoloistCore(PlaybackCore *fallback, SoloistConfig config, QObject *
 SoloistCore::~SoloistCore()
 {
     m_portWatch.stop();
+    m_socket.disconnect(this);
     m_socket.abort();
     if (m_process.state() != QProcess::NotRunning) {
         m_process.disconnect(this);
@@ -211,21 +225,29 @@ void SoloistCore::startDaemon()
 #endif
     qCInfo(lcSoloist).noquote() << "Starting" << m_config.program;
     m_process.start(m_config.program, arguments);
-    m_portWait.start();
+    watchForSocket(true);
+}
+
+void SoloistCore::watchForSocket(bool restartClock)
+{
+    if (restartClock) {
+        m_portWait.start();
+    }
     m_portWatch.start();
 }
 
 void SoloistCore::connectSocket()
 {
+    if (m_portWait.elapsed() > kStartTimeoutMs) {
+        m_portWatch.stop();
+        m_failure = QStringLiteral("Soloist started but never opened its control socket.");
+        emit stateChanged();
+        return;
+    }
     QFile file(m_config.dataDirectory + QStringLiteral("/ws.port"));
     bool ok = false;
     const int port = file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()).trimmed().toInt(&ok) : 0;
     if (!ok || port <= 0) {
-        if (m_portWait.elapsed() > kStartTimeoutMs) {
-            m_portWatch.stop();
-            m_failure = QStringLiteral("Soloist started but never opened its control socket.");
-            emit stateChanged();
-        }
         return;
     }
     m_portWatch.stop();
@@ -405,6 +427,10 @@ QCoro::Task<> SoloistCore::ensureReady(quint64 resets)
 {
     if (m_process.state() == QProcess::NotRunning) {
         startDaemon();
+    } else if (!m_socketOpen && !m_portWatch.isActive() && m_socket.state() == QAbstractSocket::UnconnectedState) {
+        // soloist runs but its socket gave up, so it gets another go
+        m_failure.clear();
+        watchForSocket(true);
     }
     QElapsedTimer waited;
     waited.start();
@@ -702,6 +728,11 @@ quint64 SoloistCore::generation() const
 QCoro::Task<QString> SoloistCore::lyricsJson(QString spotifyUri)
 {
     co_return co_await m_fallback->lyricsJson(spotifyUri);
+}
+
+QCoro::Task<QString> SoloistCore::playlistJson(QString playlistUri)
+{
+    co_return co_await m_fallback->playlistJson(playlistUri);
 }
 
 void SoloistCore::setStreamQuality(int kbps)

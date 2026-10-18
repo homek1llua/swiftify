@@ -143,8 +143,7 @@ impl LiveBuffer {
                     queue.samples.drain(..channels);
                 } else if drift < 0.0 {
                     // the output runs ahead: the last frame plays twice
-                    let last = queue.last.clone();
-                    out[..channels].copy_from_slice(&last);
+                    out[..channels].copy_from_slice(&queue.last);
                     written = channels;
                 }
                 queue.slip_due = self.slip_spacing;
@@ -160,8 +159,7 @@ impl LiveBuffer {
         }
         written += taken;
         if written >= channels {
-            let last = out[written - channels..written].to_vec();
-            queue.last.copy_from_slice(&last);
+            queue.last.copy_from_slice(&out[written - channels..written]);
         }
         queue.slip_due = queue.slip_due.saturating_sub(written / channels);
         if written < out.len() {

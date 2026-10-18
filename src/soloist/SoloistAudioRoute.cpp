@@ -22,6 +22,7 @@ struct Reply {
     bool found = false;
     quint32 index = PA_INVALID_INDEX;
     QByteArray name;
+    QByteArray server;
 };
 
 void signal(Reply *reply)
@@ -51,16 +52,26 @@ QString SoloistAudioRoute::sinkName()
 template <typename Done>
 bool SoloistAudioRoute::waitFor(Done done, int timeoutMs)
 {
+    // the wait itself has no timeout, so a timer wakes it once time is up
+    pa_mainloop_api *api = pa_threaded_mainloop_get_api(m_mainloop);
+    timeval deadline{};
+    pa_timeval_add(pa_gettimeofday(&deadline), pa_usec_t(timeoutMs) * PA_USEC_PER_MSEC);
+    pa_time_event *timer = api->time_new(api, &deadline, [](pa_mainloop_api *, pa_time_event *, const timeval *, void *self) {
+        pa_threaded_mainloop_signal(static_cast<SoloistAudioRoute *>(self)->m_mainloop, 0);
+    }, this);
     QElapsedTimer waited;
     waited.start();
+    bool ok = true;
     while (!done()) {
         const pa_context_state_t state = pa_context_get_state(m_context);
-        if (state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED || waited.elapsed() > timeoutMs) {
-            return false;
+        if (state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED || waited.elapsed() >= timeoutMs) {
+            ok = false;
+            break;
         }
         pa_threaded_mainloop_wait(m_mainloop);
     }
-    return true;
+    api->time_free(timer);
+    return ok;
 }
 
 void SoloistAudioRoute::onContextState(pa_context *, void *self)
@@ -136,19 +147,43 @@ bool SoloistAudioRoute::start()
         if (info && info->default_sink_name) {
             reply->name = info->default_sink_name;
         }
+        if (info && info->server_name) {
+            reply->server = info->server_name;
+        }
         signal(reply);
     }, &server), server);
+    // soloist only plays to a chosen sink through pipewire. under pulseaudio
+    // alone it would play to the speakers while swiftify thought it routed
+    if (!server.server.contains("PipeWire")) {
+        return fail(QStringLiteral("the sound server isn't PipeWire (%1)").arg(QString::fromUtf8(server.server)));
+    }
 
     Reply existing{m_mainloop};
     run(pa_context_get_sink_info_by_name(m_context, kSinkName, [](pa_context *, const pa_sink_info *info, int eol, void *data) {
         auto *reply = static_cast<Reply *>(data);
         if (info) {
             reply->found = true;
+            reply->index = info->owner_module;
         }
         if (eol != 0) {
             signal(reply);
         }
     }, &existing), existing);
+
+    // one left behind by a swiftify that didn't exit cleanly is made again,
+    // so it runs at today's rate and goes when this one exits
+    if (existing.found && existing.index != PA_INVALID_INDEX) {
+        Reply unloaded{m_mainloop};
+        run(pa_context_unload_module(m_context, existing.index, [](pa_context *, int success, void *data) {
+            auto *reply = static_cast<Reply *>(data);
+            reply->found = success != 0;
+            signal(reply);
+        }, &unloaded), unloaded);
+        if (unloaded.found) {
+            qCInfo(lcSoloist) << "Removed a leftover" << kSinkName << "sink";
+            existing.found = false;
+        }
+    }
 
     if (!existing.found) {
         Reply loaded{m_mainloop};

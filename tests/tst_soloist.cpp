@@ -32,6 +32,7 @@ public:
         QVERIFY(m_server.listen(QHostAddress::LocalHost, 0));
         connect(&m_server, &QWebSocketServer::newConnection, this, [this] {
             m_client = m_server.nextPendingConnection();
+            ++connections;
             connect(m_client, &QWebSocket::textMessageReceived, this, &FakeSoloist::received);
             send({{QStringLiteral("type"), QStringLiteral("auth_state")},
                   {QStringLiteral("logged_in"), loggedIn},
@@ -45,6 +46,9 @@ public:
     }
 
     quint16 port() const { return m_server.serverPort(); }
+
+    /// closes the socket, as soloist does if its websocket falls over
+    void dropClient() { m_client->close(); }
 
     void send(const QJsonObject &message)
     {
@@ -91,6 +95,7 @@ public:
     int ignorePlays = 0;
     qint64 durationMs = 200'000;
     QList<QJsonObject> commands;
+    int connections = 0;
 
 private:
     void received(const QString &text)
@@ -321,6 +326,17 @@ private slots:
         } catch (const SpotifyError &error) {
             QCOMPARE(error.kind(), SpotifyError::Kind::Superseded);
         }
+    }
+
+    void aDroppedSocketIsOpenedAgain()
+    {
+        QCoro::waitFor(m_core->playTrack(QStringLiteral("spotify:track:a")));
+        QCOMPARE(m_soloist->connections, 1);
+        m_soloist->dropClient();
+        QTRY_COMPARE(m_soloist->connections, 2);
+        m_soloist->commands.clear();
+        QCoro::waitFor(m_core->playTrack(QStringLiteral("spotify:track:b")));
+        QVERIFY(m_soloist->commandNames().contains(QStringLiteral("play")));
     }
 
     void localFilesPlayThroughTheRustCore()
