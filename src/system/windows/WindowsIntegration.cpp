@@ -21,20 +21,16 @@
 #include <roapi.h>
 #include <winstring.h>
 #include <wrl/client.h>
-#include <wrl/event.h>
 #include <wrl/wrappers/corewrappers.h>
-#include <windows.media.h>
 #include <systemmediatransportcontrolsinterop.h>
+
+// the winrt pieces mingw's headers stop short of, filled in where they are
+// missing (no-op on msvc, which has them all in the windows sdk)
+#include <system/windows/SystemMediaTransportControlsCompat.h>
 
 #include <algorithm>
 #include <array>
 #include <cwchar>
-
-#ifndef IID_ISystemMediaTransportControlsInterop
-static const GUID IID_ISystemMediaTransportControlsInterop = {
-    0xcda0807a, 0x4416, 0x4121, {0x94, 0x07, 0xda, 0x86, 0x9e, 0x99, 0x5e, 0x95}
-};
-#endif
 
 namespace swiftify {
 
@@ -554,9 +550,15 @@ void WindowsIntegration::updateMediaMetadata()
         music->put_Artist(artist.Get());
 
         if (!song.albumName.isEmpty()) {
-            HString album;
-            album.Set(reinterpret_cast<const wchar_t *>(song.albumName.utf16()), UINT32(song.albumName.length()));
-            music->put_AlbumTitle(album.Get());
+            // the album title lives on the second generation of the interface,
+            // which is asked for by id: it is not part of the music properties
+            // the updater hands over
+            ComPtr<IMusicDisplayProperties2> albumProperties;
+            if (SUCCEEDED(music.As(&albumProperties)) && albumProperties) {
+                HString album;
+                album.Set(reinterpret_cast<const wchar_t *>(song.albumName.utf16()), UINT32(song.albumName.length()));
+                albumProperties->put_AlbumTitle(album.Get());
+            }
         }
     }
 
