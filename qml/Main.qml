@@ -787,6 +787,20 @@ ApplicationWindow {
                     enabled: Player.hasSong
                     onTriggered: Player.togglePlayback()
                 }
+                Platform.MenuItem {
+                    text: "Next Song"
+                    enabled: Player.canSkipForward
+                    onTriggered: Player.skipForward()
+                }
+                Platform.MenuItem {
+                    text: "Previous Song"
+                    enabled: Player.canSkipBackward
+                    onTriggered: Player.skipBackward()
+                }
+                Platform.MenuItem {
+                    text: "Immersive Player"
+                    onTriggered: UiState.immersiveOpen = true
+                }
                 Platform.MenuSeparator {}
                 Platform.MenuItem {
                     text: "Quit Swiftify"
